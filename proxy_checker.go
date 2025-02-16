@@ -3,13 +3,12 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
-	"os/signal"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/schollz/progressbar/v3"
@@ -58,7 +57,7 @@ func promptInput(prompt, defaultValue string) string {
 	return input
 }
 
-// Prompt user to choose a protocol
+// Prompt user to choose a protocol (Silently includes 4 & 5 as Socks4 and Socks5)
 func promptProtocol(defaultProtocol string) string {
 	fmt.Println("\nChoose Proxy Protocol:")
 	fmt.Println("1. HTTPS")
@@ -69,6 +68,8 @@ func promptProtocol(defaultProtocol string) string {
 		"1": "https",
 		"2": "socks4",
 		"3": "socks5",
+		"4": "socks4",
+		"5": "socks5",
 	}
 
 	choice := promptInput("Enter choice (1-3)", defaultProtocol)
@@ -80,23 +81,55 @@ func promptProtocol(defaultProtocol string) string {
 	return defaultProtocol
 }
 
-// Read proxy list from file
-func readProxies(filePath string) ([]string, error) {
-	file, err := os.Open(filePath)
+// Fetch proxies from a URL if a URL is given
+func fetchProxiesFromURL(proxyURL string) ([]string, error) {
+	resp, err := http.Get(proxyURL)
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer resp.Body.Close()
 
-	var proxies []string
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		proxy := strings.TrimSpace(scanner.Text())
-		if proxy != "" {
-			proxies = append(proxies, proxy)
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	return extractProxies(string(body)), nil
+}
+
+// Extract proxies or URLs from a file or string content
+func extractProxies(content string) []string {
+	lines := strings.Split(content, "\n")
+	proxySet := make(map[string]struct{})
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			proxySet[line] = struct{}{}
 		}
 	}
-	return proxies, scanner.Err()
+
+	uniqueProxies := make([]string, 0, len(proxySet))
+	for proxy := range proxySet {
+		uniqueProxies = append(uniqueProxies, proxy)
+	}
+
+	return uniqueProxies
+}
+
+// Read proxies from a file or fetch from URL
+func readProxies(filePath string) ([]string, error) {
+	if strings.HasPrefix(filePath, "http://") || strings.HasPrefix(filePath, "https://") {
+		return fetchProxiesFromURL(filePath)
+	}
+
+	data, err := ioutil.ReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	proxies := extractProxies(string(data))
+	return proxies, nil
 }
 
 // Validate proxy by sending request through it
@@ -112,23 +145,26 @@ func checkProxy(proxy, protocol, targetURL, validString string, timeout time.Dur
 	transport := &http.Transport{Proxy: http.ProxyURL(proxyParsed)}
 	client := &http.Client{Transport: transport, Timeout: timeout}
 
+	start := time.Now() // Start measuring response time
 	resp, err := client.Get(targetURL)
 	if err != nil {
 		return
 	}
 	defer resp.Body.Close()
 
+	responseTime := time.Since(start).Milliseconds() // Calculate response time
+
 	body := make([]byte, 1024)
 	n, _ := resp.Body.Read(body)
 	responseBody := string(body[:n])
 
 	if strings.Contains(responseBody, validString) {
-		results <- proxy
+		results <- fmt.Sprintf("%s|%dms", proxy, responseTime) // Send proxy with response time
 		*validCount++
 	}
 }
 
-// Save valid proxies to file
+// Save valid proxies to file (without response time)
 func saveValidProxy(protocol, proxy string) error {
 	os.MkdirAll("results", os.ModePerm)
 	file, err := os.OpenFile(fmt.Sprintf("results/%s.valid.txt", protocol), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
@@ -142,17 +178,20 @@ func saveValidProxy(protocol, proxy string) error {
 }
 
 // Display valid proxy in green and save it
-func handleValidProxy(protocol, proxy string) {
-	fmt.Printf("\033[32m[VALID] %s\033[0m\n", proxy) // Green text output
+func handleValidProxy(protocol, proxyWithTime string) {
+	parts := strings.Split(proxyWithTime, "|")
+	proxy := parts[0]
+	responseTime := parts[1]
+
+	fmt.Printf("\033[32m[%s] %s\033[0m\n", responseTime, proxy) // Green text with response time
 	saveValidProxy(protocol, proxy)
 }
 
 // Function to handle graceful exit
 func handleExit(results chan string, validCount *int) {
-	// Save proxies if the program exits unexpectedly
 	go func() {
 		for proxy := range results {
-			handleValidProxy("socks5", proxy) // Assuming "socks5" for simplicity, can be changed
+			handleValidProxy("socks5", proxy)
 		}
 		fmt.Printf("\nSaved %d valid proxies to file\n", *validCount)
 	}()
@@ -160,6 +199,10 @@ func handleExit(results chan string, validCount *int) {
 
 // Main function
 func main() {
+	// Print bright blue startup message
+	fmt.Println("\033[94mProxy Checker | Fast and Efficient | Written in GO\033[0m")
+	fmt.Println("\033[94mBuild Date: Feburary 16 2025...\033[0m\n")
+
 	// Load configuration
 	config, err := loadConfig()
 	if err != nil {
@@ -168,7 +211,7 @@ func main() {
 	}
 
 	// Get user inputs with defaults
-	proxyFile := promptInput("\nEnter proxy list file path", config.ProxyList)
+	proxyFile := promptInput("Enter proxy list file path", config.ProxyList)
 	protocol := promptProtocol(config.Protocol)
 	threadCount := promptInput("Enter number of threads", fmt.Sprintf("%d", config.Threads))
 
@@ -189,51 +232,24 @@ func main() {
 	// Setup worker pool and progress bar
 	var wg sync.WaitGroup
 	results := make(chan string, len(proxies))
-	bar := progressbar.NewOptions(len(proxies), progressbar.OptionSetWidth(50), progressbar.OptionSetPredictTime(false), progressbar.OptionSetDescription("Checking proxies"))
+	bar := progressbar.NewOptions(len(proxies), progressbar.OptionSetWidth(10))
 
 	validCount := 0
-
-	// Set up signal handling for graceful exit
-	signalChan := make(chan os.Signal, 1)
-	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
-	defer close(signalChan)
-
-	// Handle exit and save proxies when exiting
 	handleExit(results, &validCount)
 
-	// Start proxy testing with progress bar
-	fmt.Println("\nChecking proxies, please wait...\n")
 	sem := make(chan struct{}, threads)
-
 	for _, proxy := range proxies {
 		wg.Add(1)
 		sem <- struct{}{}
-
 		go func(proxy string) {
 			defer func() { <-sem }()
 			checkProxy(proxy, protocol, config.URL, config.ValidStr, config.Timeout, results, &validCount, &wg)
 			bar.Add(1)
-			// Update progress bar with valid proxies count
-			fmt.Printf("\r[Valid Proxies: %d] ", validCount)
 		}(proxy)
 	}
 
-	// Wait for all goroutines to finish
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-
-	// Process valid proxies
-	for proxy := range results {
-		handleValidProxy(protocol, proxy)
-	}
-
-	// Finish progress bar and display the final count
+	wg.Wait()
+	close(results)
 	bar.Finish()
-	fmt.Printf("\nTotal valid proxies found: %d\n", validCount)
-
-	// Wait for a signal (Ctrl+C or SIGTERM)
-	<-signalChan
-	fmt.Println("\nGraceful shutdown initiated, proxies saved.")
+	fmt.Printf("\nTotal Online proxies found: %d\n", validCount)
 }
