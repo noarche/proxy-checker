@@ -1,0 +1,10 @@
+https://api.proxyscrape.com/v4/free-proxy-list/get?request=display_proxies&proxy_format=protocolipport&format=text
+https://raw.githubusercontent.com/officialputuid/KangProxy/refs/heads/KangProxy/https/https.txt
+https://raw.githubusercontent.com/ErcinDedeoglu/proxies/refs/heads/main/proxies/https.txt
+https://raw.githubusercontent.com/TheSpeedX/PROXY-List/refs/heads/master/http.txt
+https://raw.githubusercontent.com/monosans/proxy-list/refs/heads/main/proxies/http.txt
+https://api.openproxylist.xyz/socks5.txt
+https://raw.githubusercontent.com/B4RC0DE-TM/proxy-list/main/SOCKS5.txt
+https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-socks5.txt
+https://raw.githubusercontent.com/proxifly/free-proxy-list/refs/heads/main/proxies/all/data.txt
+https://raw.githubusercontent.com/monosans/proxy-list/refs/heads/main/proxies/all.txt
