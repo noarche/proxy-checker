@@ -1,3 +1,0 @@
-https://api.proxyscrape.com/v4/free-proxy-list/get?request=display_proxies&proxy_format=protocolipport&format=text
-https://raw.githubusercontent.com/officialputuid/KangProxy/refs/heads/KangProxy/https/https.txt
-https://raw.githubusercontent.com/ErcinDedeoglu/proxies/refs/heads/main/proxies/https.txt

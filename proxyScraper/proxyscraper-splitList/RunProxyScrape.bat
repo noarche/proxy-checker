@@ -1,2 +1,0 @@
-python ProxyScraper.py
-pause
