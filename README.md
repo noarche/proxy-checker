@@ -1,6 +1,4 @@
-
-![GO_Proxychecker](https://github.com/user-attachments/assets/18b7352b-6bc4-4a16-ac1a-6a0c9a6c91ed)
-
+![GO_Proxychecker](https://github.com/user-attachments/assets/b1529eee-859a-452f-b7b4-bac659946402)
 
 # About
 Checks proxylist for online proxies. Supports https, socks4 &amp; socks5 protocol. Written in GO.
